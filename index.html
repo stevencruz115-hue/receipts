@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Receipts</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Receipts">
+<meta name="theme-color" content="#0054e2">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root {
+    --hdr: #0054e2; --hdr-fg: #fff; --bg: #f2f2f7; --page: #fff; --fg: #111; --muted: #6e6e73;
+    --tile: #fff; --line: #e5e5ea; --hdr-h: 52px;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: pan-y; overscroll-behavior: none;
+  }
+  body { height: 100vh; height: 100dvh; overflow: hidden; }
+
+  .screen {
+    position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg);
+  }
+  .screen[hidden] { display: none; }
+  header {
+    flex: none; background: var(--hdr); color: var(--hdr-fg);
+    padding-top: env(safe-area-inset-top);
+    /* measured off the Walmart app: chevron centred 36.5pt from the left, share 39pt from the right,
+       title/icons sit ~3pt above the bar's centre line */
+    display: grid; grid-template-columns: 73px 1fr 78px; align-items: center; height: var(--hdr-h);
+    box-sizing: content-box;
+  }
+  header > * { transform: translateY(-3px); }
+  header h1 {
+    margin: 0; text-align: center; font-size: 17px; font-weight: 700; line-height: 1.2; letter-spacing: -0.1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px;
+  }
+  .ico {
+    display: flex; justify-content: center; align-items: center; height: var(--hdr-h);
+    background: none; border: 0; color: inherit; padding: 0; margin: 0; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ico:active { opacity: .55; }
+  .ico svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ico.chev svg { stroke-width: 3; }
+  .ico.plus svg { stroke-width: 2.4; }
+  main {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* gallery */
+  .grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 12px;
+  }
+  .tile {
+    background: var(--tile); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04);
+    cursor: pointer; transition: transform .08s ease;
+  }
+  .tile:active { transform: scale(.97); }
+  .tile .thumb {
+    width: 100%; aspect-ratio: 3 / 4; object-fit: cover; object-position: top; display: block;
+    background: #fff; pointer-events: none; -webkit-user-drag: none;
+  }
+  .tile .cap { padding: 8px 10px 10px; }
+  .tile .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .date { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .empty {
+    text-align: center; color: var(--muted); padding: 80px 32px; font-size: 15px; line-height: 1.5;
+  }
+  .empty b { color: var(--fg); }
+
+  /* viewer */
+  /* the image always reaches the bottom edge: tall receipts scroll off the screen, short ones are scaled
+     up (anchored top, sides cropped evenly) until their bottom leaves the screen. No floor, no padding. */
+  #viewer main { background: var(--page); padding-bottom: 0; }
+  #viewer img {
+    display: block; width: 100%; height: auto; object-fit: cover; object-position: top center;
+    pointer-events: none; -webkit-user-drag: none;
+  }
+
+  /* action sheet */
+  #sheet { position: absolute; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; z-index: 10; }
+  #sheet[hidden] { display: none; }
+  .sheet-box { width: 100%; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+  .sheet-box button {
+    display: block; width: 100%; border: 0; background: rgba(255,255,255,.96); color: #007aff;
+    font: 500 19px -apple-system, BlinkMacSystemFont, sans-serif; padding: 16px; margin-top: 8px; border-radius: 14px;
+  }
+  .sheet-box button.danger { color: #ff3b30; }
+  .sheet-box button.cancel { font-weight: 600; }
+  .sheet-box .sheet-title { font-size: 13px; color: var(--muted); text-align: center; padding: 12px 16px 4px; }
+  .sheet-box .group { background: rgba(255,255,255,.96); border-radius: 14px; overflow: hidden; }
+  .sheet-box .group button { border-radius: 0; margin: 0; border-top: 1px solid var(--line); }
+  .sheet-box .group button:first-of-type { border-top: 0; }
+
+  #busy { position: absolute; inset: 0; background: rgba(255,255,255,.7); display: flex; align-items: center; justify-content: center; z-index: 20; font-size: 15px; color: var(--muted); }
+  #busy[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<section id="gallery" class="screen">
+  <header>
+    <span></span>
+    <h1>Receipts</h1>
+    <button class="ico plus" id="addBtn" aria-label="Add receipt">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </header>
+  <main id="galleryMain">
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden>
+      No receipts yet.<br>Tap <b>+</b> to add one from Photos.<br><br>
+      <span style="font-size:13px">Tip: hold a receipt to rename or delete it.</span>
+    </div>
+  </main>
+</section>
+
+<section id="viewer" class="screen" hidden>
+  <header>
+    <button class="ico chev" id="backBtn" aria-label="Back">
+      <svg viewBox="0 0 24 24"><path d="M15 3.5 7 12l8 8.5"/></svg>
+    </button>
+    <h1 id="viewerTitle">Receipt details</h1>
+    <button class="ico" id="shareBtn" aria-label="Share">
+      <svg viewBox="0 0 24 24"><path d="M9 9.5H4v12.5h16V9.5h-5M12 15.5V2.5M7.5 7l4.5-4.5L16.5 7"/></svg>
+    </button>
+  </header>
+  <main id="viewerMain"><img id="viewerImg" alt=""></main>
+</section>
+
+<div id="sheet" hidden>
+  <div class="sheet-box">
+    <div class="group">
+      <div class="sheet-title" id="sheetTitle"></div>
+      <button id="renameBtn">Rename</button>
+      <button id="deleteBtn" class="danger">Delete</button>
+    </div>
+    <button class="cancel" id="cancelBtn">Cancel</button>
+  </div>
+</div>
+
+<div id="busy" hidden>Adding…</div>
+<input type="file" id="file" accept="image/*" multiple hidden>
+
+<script>
+(() => {
+  'use strict';
+  const MAX_W = 1600, THUMB_W = 480, JPEG_Q = 0.85;
+  const $ = id => document.getElementById(id);
+  const gallery = $('gallery'), viewer = $('viewer'), grid = $('grid'), empty = $('empty');
+  const viewerImg = $('viewerImg'), viewerMain = $('viewerMain'), viewerTitle = $('viewerTitle');
+  const sheet = $('sheet'), busy = $('busy'), fileInput = $('file');
+  let items = [], current = null, sheetItem = null, currentUrl = null;
+
+  // ---------- storage (IndexedDB) ----------
+  const dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('receipts', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  const tx = async (mode, fn) => {
+    const db = await dbp;
+    return new Promise((res, rej) => {
+      const t = db.transaction('items', mode), s = t.objectStore('items');
+      const q = fn(s);
+      t.oncomplete = () => res(q && q.result);
+      t.onerror = () => rej(t.error);
+    });
+  };
+  const all = () => tx('readonly', s => s.getAll());
+  const put = item => tx('readwrite', s => s.put(item));
+  const del = id => tx('readwrite', s => s.delete(id));
+
+  // ---------- image processing ----------
+  const loadImage = blob => new Promise((res, rej) => {
+    const url = URL.createObjectURL(blob), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); res(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('decode failed')); };
+    im.src = url;
+  });
+  const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  const blobOf = c => new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_Q));
+
+  // Strip flat rows (white margin, a black rule, app chrome…) off the bottom so the receipt ends where the
+  // content ends, and find the receipt's own background colour so the page floor can match it exactly.
+  function trimBottom(c) {
+    const g = c.getContext('2d'), W = c.width, H = c.height, step = Math.max(1, Math.floor(W / 320));
+    const flat = y => {
+      const d = g.getImageData(0, y, W, 1).data;
+      let mn = [255, 255, 255], mx = [0, 0, 0];
+      for (let x = 0; x < W; x += step) { const i = x * 4; for (let k = 0; k < 3; k++) { const v = d[i + k]; if (v < mn[k]) mn[k] = v; if (v > mx[k]) mx[k] = v; } }
+      return mx[0] - mn[0] <= 28 && mx[1] - mn[1] <= 28 && mx[2] - mn[2] <= 28;
+    };
+    let y = H - 1; const floor = Math.floor(H * 0.5);
+    while (y > floor && flat(y)) y--;
+    const h = y + 1;
+    // background = most common colour (quantised) of the receipt's paper: the first flat row right under the
+    // content if there is one, plus the left/right margins of the bottom quarter. Never the content rows
+    // themselves, because a barcode or a rule can dominate those.
+    const bins = new Map();
+    const tally = d => {
+      for (let i = 0; i < d.length; i += 4) {
+        const k = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
+        const b = bins.get(k) || [0, 0, 0, 0]; b[0]++; b[1] += d[i]; b[2] += d[i + 1]; b[3] += d[i + 2]; bins.set(k, b);
+      }
+    };
+    if (h < H) tally(g.getImageData(0, h, W, 1).data);
+    const mw = Math.max(2, Math.round(W * 0.03)), y0 = Math.floor(h * 0.75), mh = h - y0;
+    tally(g.getImageData(0, y0, mw, mh).data);
+    tally(g.getImageData(W - mw, y0, mw, mh).data);
+    let best = null; for (const b of bins.values()) if (!best || b[0] > best[0]) best = b;
+    const edge = best ? `rgb(${Math.round(best[1] / best[0])},${Math.round(best[2] / best[0])},${Math.round(best[3] / best[0])})` : '#fff';
+    return { h, edge };
+  }
+
+  async function process(im) {
+    const scale = Math.min(1, MAX_W / im.naturalWidth);
+    const c = canvasOf(Math.round(im.naturalWidth * scale), Math.round(im.naturalHeight * scale));
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(im, 0, 0, c.width, c.height);
+    const { h, edge } = trimBottom(c);
+    const full = canvasOf(c.width, h);
+    full.getContext('2d').drawImage(c, 0, 0, c.width, h, 0, 0, c.width, h);
+    const ts = Math.min(1, THUMB_W / full.width), th = canvasOf(Math.round(full.width * ts), Math.round(h * ts));
+    th.getContext('2d').drawImage(full, 0, 0, th.width, th.height);
+    return { blob: await blobOf(full), thumb: await blobOf(th), w: full.width, h, edge, trimmed: c.height - h };
+  }
+  const defaultName = d => 'Receipt ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  async function addFiles(files) {
+    if (!files.length) return;
+    busy.hidden = false;
+    try {
+      for (const f of files) {
+        const im = await loadImage(f);
+        const p = await process(im);
+        const added = new Date();
+        await put({ name: defaultName(added), added: added.toISOString(), blob: p.blob, thumb: p.thumb, w: p.w, h: p.h, edge: p.edge });
+      }
+    } catch (e) {
+      alert('Could not add that image: ' + e.message);
+    } finally {
+      busy.hidden = true;
+      await refresh();
+    }
+  }
+
+  // ---------- gallery ----------
+  const fmtDate = iso => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  async function refresh() {
+    items = (await all()).sort((a, b) => b.added.localeCompare(a.added));
+    grid.querySelectorAll('img').forEach(i => URL.revokeObjectURL(i.src));
+    grid.innerHTML = '';
+    empty.hidden = items.length > 0;
+    for (const it of items) {
+      const t = document.createElement('div'); t.className = 'tile'; t.dataset.id = it.id;
+      const im = document.createElement('img'); im.className = 'thumb'; im.src = URL.createObjectURL(it.thumb); im.alt = '';
+      const cap = document.createElement('div'); cap.className = 'cap';
+      cap.innerHTML = `<div class="name"></div><div class="date"></div>`;
+      cap.querySelector('.name').textContent = it.name;
+      cap.querySelector('.date').textContent = fmtDate(it.added);
+      t.append(im, cap);
+      attachPress(t, () => open(it), () => openSheet(it));
+      grid.append(t);
+    }
+  }
+
+  // tap = click; hold 600 ms = onHold, and the click that follows the hold is swallowed
+  function attachPress(el, onTap, onHold) {
+    let timer = null, held = false, sx = 0, sy = 0;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    el.addEventListener('touchstart', e => {
+      held = false; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      timer = setTimeout(() => { held = true; onHold(); }, 600);
+    }, { passive: true });
+    el.addEventListener('touchmove', e => {
+      if (Math.abs(e.touches[0].clientX - sx) > 8 || Math.abs(e.touches[0].clientY - sy) > 8) cancel();
+    }, { passive: true });
+    el.addEventListener('touchend', cancel, { passive: true });
+    el.addEventListener('touchcancel', cancel, { passive: true });
+    el.addEventListener('pointerdown', () => { held = false; });                     // every new press starts clean
+    el.addEventListener('contextmenu', e => { e.preventDefault(); onHold(); });    // mouse right-click (no click follows)
+    el.addEventListener('click', () => { if (held) { held = false; return; } onTap(); });
+  }
+
+  // ---------- viewer ----------
+  function open(it) {
+    current = it;
+    if (currentUrl) URL.revokeObjectURL(currentUrl);
+    currentUrl = URL.createObjectURL(it.blob);
+    viewerImg.src = currentUrl; viewerImg.width = it.w; viewerImg.height = it.h;
+    viewerTitle.textContent = 'Receipt details';   // fixed, like the Walmart app; the name lives on the tile
+    viewerMain.scrollTop = 0;
+    // never shorter than the scroll area, so the image's bottom is always at or past the screen edge
+    gallery.hidden = true; viewer.hidden = false;
+    viewerImg.style.minHeight = viewerMain.clientHeight + 'px';
+    // floor matches the receipt's own background, all the way under the home indicator
+    const edge = it.edge || '#fff';
+    viewerMain.style.background = edge; viewer.style.background = edge;
+    document.documentElement.style.background = edge; document.body.style.background = edge;
+  }
+  window.addEventListener('resize', () => { if (current) viewerImg.style.minHeight = viewerMain.clientHeight + 'px'; });
+  function close() {
+    viewer.hidden = true; gallery.hidden = false; current = null;
+    document.documentElement.style.background = ''; document.body.style.background = '';
+  }
+  $('backBtn').addEventListener('click', close);
+  $('shareBtn').addEventListener('click', async () => {
+    if (!current) return;
+    const file = new File([current.blob], current.name.replace(/[^\w .-]+/g, '') + '.jpg', { type: 'image/jpeg' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: current.name });
+      } else if (navigator.share) {
+        await navigator.share({ title: current.name });
+      } else {
+        alert('Sharing is not available in this browser.');
+      }
+    } catch (e) { /* user cancelled */ }
+  });
+
+  // ---------- rename / delete ----------
+  function openSheet(it) { sheetItem = it; $('sheetTitle').textContent = it.name; sheet.hidden = false; }
+  function closeSheet() { sheet.hidden = true; sheetItem = null; }
+  async function rename(it) {
+    const n = prompt('Name this receipt', it.name);
+    if (n === null) return;
+    it.name = n.trim() || it.name;
+    await put(it);
+    await refresh();
+  }
+  $('renameBtn').addEventListener('click', async () => { const it = sheetItem; closeSheet(); if (it) await rename(it); });
+  $('deleteBtn').addEventListener('click', async () => {
+    const it = sheetItem; closeSheet();
+    if (it && confirm(`Delete "${it.name}"?`)) { await del(it.id); await refresh(); }
+  });
+  $('cancelBtn').addEventListener('click', closeSheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+
+  // ---------- add ----------
+  $('addBtn').addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
+  fileInput.addEventListener('change', () => addFiles([...fileInput.files]));
+
+  // ---------- lock-down: no pinch, no double-tap zoom, no context menus outside tiles ----------
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+    document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+  let lastTouch = 0;
+  document.addEventListener('touchend', e => {
+    const now = Date.now();
+    if (now - lastTouch < 350 && !e.target.closest('button')) e.preventDefault();
+    lastTouch = now;
+  }, { passive: false });
+
+  // ---------- offline shell ----------
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  refresh();
+  window.__receipts = { addFiles, refresh, open, close, all };   // test hooks
+})();
+</script>
+</body>
+</html>
