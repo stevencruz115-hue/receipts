@@ -86,9 +86,9 @@
   /* the image always reaches the bottom edge: tall receipts scroll off the screen, short ones are scaled
      up (anchored top, sides cropped evenly) until their bottom leaves the screen. No floor, no padding. */
   /* overflow-y: scroll (not auto) keeps iOS's rubber-band bounce on every receipt, however short */
-  /* pinch zoom is done by the page itself (the image is resized in place), so it holds when you let go and
-     the viewer scrolls both ways while zoomed; the browser's own pinch stays off */
-  #viewer main { background: var(--page); padding-bottom: 0; overflow-y: scroll; overflow-x: auto; touch-action: pan-x pan-y; }
+  /* pinch zoom is done by the page itself (the image is resized in place), so it holds when you let go.
+     Left/right is locked: zoom stays centred and only up/down scrolls. The browser's own pinch stays off. */
+  #viewer main { background: var(--page); padding-bottom: 0; overflow-y: scroll; overflow-x: hidden; touch-action: pan-y; }
   #viewer img {
     display: block; width: 100%; height: auto; object-fit: cover; object-position: top center;
     pointer-events: none; -webkit-user-drag: none;
@@ -322,12 +322,13 @@
 
   // ---------- zoom: pinch or double-tap; it stays where you leave it ----------
   // The image box is scaled as a whole (width and min-height together), so a point on the receipt sits at
-  // (unzoomed position × zoom). (ux, uy) is the unzoomed point under the fingers; it is kept under them.
+  // (unzoomed position × zoom). uy is the unzoomed height under the fingers and stays under them; sideways the
+  // receipt always stays centred (left/right is locked), so zoom only changes the scale.
   function zoomAt(z, ux, uy, mx, my) {
     zoom = Math.min(MAX_ZOOM, Math.max(1, z));
     viewerImg.style.width = zoom * 100 + '%';
     fitViewer();
-    viewerMain.scrollLeft = ux * zoom - mx;
+    viewerMain.scrollLeft = (viewerMain.scrollWidth - viewerMain.clientWidth) / 2;
     viewerMain.scrollTop = uy * zoom - my;
   }
   const local = (x, y) => { const r = viewerMain.getBoundingClientRect(); return [x - r.left, y - r.top]; };
