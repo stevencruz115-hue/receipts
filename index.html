@@ -86,7 +86,9 @@
   /* the image always reaches the bottom edge: tall receipts scroll off the screen, short ones are scaled
      up (anchored top, sides cropped evenly) until their bottom leaves the screen. No floor, no padding. */
   /* overflow-y: scroll (not auto) keeps iOS's rubber-band bounce on every receipt, however short */
-  #viewer main { background: var(--page); padding-bottom: 0; overflow-y: scroll; }
+  /* pinch zoom is done by the page itself (the image is resized in place), so it holds when you let go and
+     the viewer scrolls both ways while zoomed; the browser's own pinch stays off */
+  #viewer main { background: var(--page); padding-bottom: 0; overflow-y: scroll; overflow-x: auto; touch-action: pan-x pan-y; }
   #viewer img {
     display: block; width: 100%; height: auto; object-fit: cover; object-position: top center;
     pointer-events: none; -webkit-user-drag: none;
@@ -165,7 +167,8 @@
   const gallery = $('gallery'), viewer = $('viewer'), grid = $('grid'), empty = $('empty');
   const viewerImg = $('viewerImg'), viewerMain = $('viewerMain'), viewerTitle = $('viewerTitle');
   const sheet = $('sheet'), busy = $('busy'), fileInput = $('file');
-  let items = [], current = null, sheetItem = null, currentUrl = null;
+  let items = [], current = null, sheetItem = null, currentUrl = null, zoom = 1;
+  const MAX_ZOOM = 5, TAP_ZOOM = 2.5;
 
   // ---------- storage (IndexedDB) ----------
   const dbp = new Promise((res, rej) => {
@@ -306,7 +309,7 @@
     currentUrl = URL.createObjectURL(it.blob);
     viewerImg.src = currentUrl; viewerImg.width = it.w; viewerImg.height = it.h;
     viewerTitle.textContent = 'Receipt details';   // fixed, like the Walmart app; the name lives on the tile
-    viewerMain.scrollTop = 0;
+    zoom = 1; viewerImg.style.width = ''; viewerMain.scrollTop = 0; viewerMain.scrollLeft = 0;
     // always 1px taller than the scroll area, so short receipts still scroll and bounce instead of locking
     gallery.hidden = true; viewer.hidden = false;
     fitViewer();
@@ -315,10 +318,58 @@
     viewerMain.style.background = edge; viewer.style.background = edge;
     document.documentElement.style.background = edge; document.body.style.background = edge;
   }
-  function fitViewer() { viewerImg.style.minHeight = (viewerMain.clientHeight + 1) + 'px'; }
+  function fitViewer() { viewerImg.style.minHeight = (viewerMain.clientHeight + 1) * zoom + 'px'; }
+
+  // ---------- zoom: pinch or double-tap; it stays where you leave it ----------
+  // The image box is scaled as a whole (width and min-height together), so a point on the receipt sits at
+  // (unzoomed position × zoom). (ux, uy) is the unzoomed point under the fingers; it is kept under them.
+  function zoomAt(z, ux, uy, mx, my) {
+    zoom = Math.min(MAX_ZOOM, Math.max(1, z));
+    viewerImg.style.width = zoom * 100 + '%';
+    fitViewer();
+    viewerMain.scrollLeft = ux * zoom - mx;
+    viewerMain.scrollTop = uy * zoom - my;
+  }
+  const local = (x, y) => { const r = viewerMain.getBoundingClientRect(); return [x - r.left, y - r.top]; };
+  const unzoomed = (mx, my) => [(viewerMain.scrollLeft + mx) / zoom, (viewerMain.scrollTop + my) / zoom];
+  let pinch = null, tap = null, lastTap = null;
+  const mid = t => local((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  viewerMain.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      const [mx, my] = mid(e.touches);
+      pinch = { d: dist(e.touches), z: zoom, u: unzoomed(mx, my) };
+      tap = lastTap = null;
+    } else if (e.touches.length === 1) {
+      tap = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+    } else tap = null;
+  }, { passive: true });
+  viewerMain.addEventListener('touchmove', e => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();                                   // no scrolling while two fingers are pinching
+      const [mx, my] = mid(e.touches);
+      zoomAt(pinch.z * dist(e.touches) / pinch.d, pinch.u[0], pinch.u[1], mx, my);
+    } else if (tap && Math.hypot(e.touches[0].clientX - tap.x, e.touches[0].clientY - tap.y) > 10) tap = null;
+  }, { passive: false });
+  viewerMain.addEventListener('touchend', e => {
+    if (pinch && e.touches.length < 2) {
+      pinch = null;
+      if (zoom < 1.05) zoomAt(1, ...unzoomed(0, 0), 0, 0);  // a hair above fit snaps back to fit
+      return;
+    }
+    if (!tap || e.touches.length || Date.now() - tap.t > 300) { tap = null; return; }
+    // double-tap: zoom in on that spot, or back out to fit if already zoomed
+    const now = Date.now(), p = { x: tap.x, y: tap.y, t: now }; tap = null;
+    if (lastTap && now - lastTap.t < 350 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
+      lastTap = null;
+      const [mx, my] = local(p.x, p.y), [ux, uy] = unzoomed(mx, my);
+      if (zoom > 1) zoomAt(1, ux, uy, mx, my); else zoomAt(TAP_ZOOM, ux, uy, mx, my);
+    } else lastTap = p;
+  }, { passive: true });
+  viewerMain.addEventListener('touchcancel', () => { pinch = tap = null; }, { passive: true });
   window.addEventListener('resize', () => { if (current) fitViewer(); });
   function close() {
-    viewer.hidden = true; gallery.hidden = false; current = null;
+    viewer.hidden = true; gallery.hidden = false; current = null; pinch = null;
     document.documentElement.style.background = ''; document.body.style.background = '';
   }
   $('backBtn').addEventListener('click', close);
