@@ -1,5 +1,5 @@
 // Offline shell for the Receipts app. Receipts themselves live in IndexedDB on the phone.
-const VERSION = 'receipts-v6';
+const VERSION = 'receipts-v7';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
