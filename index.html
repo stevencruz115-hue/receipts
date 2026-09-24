@@ -85,7 +85,8 @@
   /* viewer */
   /* the image always reaches the bottom edge: tall receipts scroll off the screen, short ones are scaled
      up (anchored top, sides cropped evenly) until their bottom leaves the screen. No floor, no padding. */
-  #viewer main { background: var(--page); padding-bottom: 0; }
+  /* overflow-y: scroll (not auto) keeps iOS's rubber-band bounce on every receipt, however short */
+  #viewer main { background: var(--page); padding-bottom: 0; overflow-y: scroll; }
   #viewer img {
     display: block; width: 100%; height: auto; object-fit: cover; object-position: top center;
     pointer-events: none; -webkit-user-drag: none;
@@ -306,15 +307,16 @@
     viewerImg.src = currentUrl; viewerImg.width = it.w; viewerImg.height = it.h;
     viewerTitle.textContent = 'Receipt details';   // fixed, like the Walmart app; the name lives on the tile
     viewerMain.scrollTop = 0;
-    // never shorter than the scroll area, so the image's bottom is always at or past the screen edge
+    // always 1px taller than the scroll area, so short receipts still scroll and bounce instead of locking
     gallery.hidden = true; viewer.hidden = false;
-    viewerImg.style.minHeight = viewerMain.clientHeight + 'px';
+    fitViewer();
     // floor matches the receipt's own background, all the way under the home indicator
     const edge = it.edge || '#fff';
     viewerMain.style.background = edge; viewer.style.background = edge;
     document.documentElement.style.background = edge; document.body.style.background = edge;
   }
-  window.addEventListener('resize', () => { if (current) viewerImg.style.minHeight = viewerMain.clientHeight + 'px'; });
+  function fitViewer() { viewerImg.style.minHeight = (viewerMain.clientHeight + 1) + 'px'; }
+  window.addEventListener('resize', () => { if (current) fitViewer(); });
   function close() {
     viewer.hidden = true; gallery.hidden = false; current = null;
     document.documentElement.style.background = ''; document.body.style.background = '';
