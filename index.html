@@ -89,6 +89,9 @@
   /* pinch zoom is done by the page itself (the image is resized in place), so it holds when you let go.
      Left/right is locked: zoom stays centred and only up/down scrolls. The browser's own pinch stays off. */
   #viewer main { background: var(--page); padding-bottom: 0; overflow-y: scroll; overflow-x: hidden; touch-action: pan-y; }
+  /* the zoomed image is clipped to the screen width and centred inside this box, so there is never anything
+     off to the side to scroll to (iOS ignores overflow-x: hidden on the scroller for touch) */
+  #zoomBox { width: 100%; overflow: hidden; overflow: clip; }
   #viewer img {
     display: block; width: 100%; height: auto; object-fit: cover; object-position: top center;
     pointer-events: none; -webkit-user-drag: none;
@@ -142,7 +145,7 @@
       <svg viewBox="0 0 24 24"><path d="M9 9.5H4v12.5h16V9.5h-5M12 15.5V2.5M7.5 7l4.5-4.5L16.5 7"/></svg>
     </button>
   </header>
-  <main id="viewerMain"><img id="viewerImg" alt=""></main>
+  <main id="viewerMain"><div id="zoomBox"><img id="viewerImg" alt=""></div></main>
 </section>
 
 <div id="sheet" hidden>
@@ -309,7 +312,7 @@
     currentUrl = URL.createObjectURL(it.blob);
     viewerImg.src = currentUrl; viewerImg.width = it.w; viewerImg.height = it.h;
     viewerTitle.textContent = 'Receipt details';   // fixed, like the Walmart app; the name lives on the tile
-    zoom = 1; viewerImg.style.width = ''; viewerMain.scrollTop = 0; viewerMain.scrollLeft = 0;
+    zoom = 1; viewerImg.style.width = viewerImg.style.marginLeft = ''; viewerMain.scrollTop = 0;
     // always 1px taller than the scroll area, so short receipts still scroll and bounce instead of locking
     gallery.hidden = true; viewer.hidden = false;
     fitViewer();
@@ -327,12 +330,12 @@
   function zoomAt(z, ux, uy, mx, my) {
     zoom = Math.min(MAX_ZOOM, Math.max(1, z));
     viewerImg.style.width = zoom * 100 + '%';
+    viewerImg.style.marginLeft = -(zoom - 1) * 50 + '%';    // centred; the sides are clipped by #zoomBox
     fitViewer();
-    viewerMain.scrollLeft = (viewerMain.scrollWidth - viewerMain.clientWidth) / 2;
     viewerMain.scrollTop = uy * zoom - my;
   }
   const local = (x, y) => { const r = viewerMain.getBoundingClientRect(); return [x - r.left, y - r.top]; };
-  const unzoomed = (mx, my) => [(viewerMain.scrollLeft + mx) / zoom, (viewerMain.scrollTop + my) / zoom];
+  const unzoomed = (mx, my) => [mx, (viewerMain.scrollTop + my) / zoom];
   let pinch = null, tap = null, lastTap = null;
   const mid = t => local((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
   const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
