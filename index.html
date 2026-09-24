@@ -26,6 +26,7 @@
     -webkit-tap-highlight-color: transparent;
     touch-action: pan-y; overscroll-behavior: none;
   }
+  html { overflow: hidden; }   /* the page itself never scrolls; only the gallery/viewer areas do */
   body { height: 100vh; height: 100dvh; overflow: hidden; }
 
   .screen {
@@ -56,7 +57,7 @@
   .ico.plus svg { stroke-width: 2.4; }
   main {
     flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain; overscroll-behavior-x: none;
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -81,6 +82,7 @@
     text-align: center; color: var(--muted); padding: 80px 32px; font-size: 15px; line-height: 1.5;
   }
   .empty b { color: var(--fg); }
+  .ver { text-align: center; color: var(--muted); font-size: 11px; padding: 4px 0 16px; opacity: .7; }
 
   /* viewer */
   /* the image always reaches the bottom edge: tall receipts scroll off the screen, short ones are scaled
@@ -132,6 +134,7 @@
       No receipts yet.<br>Tap <b>+</b> to add one from Photos.<br><br>
       <span style="font-size:13px">Tip: hold a receipt to rename or delete it.</span>
     </div>
+    <div class="ver" id="ver"></div>
   </main>
 </section>
 
@@ -165,6 +168,7 @@
 <script>
 (() => {
   'use strict';
+  const APP_VERSION = 'v9';   // shown at the bottom of the gallery; keep in step with VERSION in sw.js
   const MAX_W = 1600, THUMB_W = 480, JPEG_Q = 0.85;
   const $ = id => document.getElementById(id);
   const gallery = $('gallery'), viewer = $('viewer'), grid = $('grid'), empty = $('empty');
@@ -423,9 +427,16 @@
     lastTouch = now;
   }, { passive: false });
 
+  // ---------- belt and braces: nothing may ever sit scrolled sideways ----------
+  // iOS can still nudge a scroller or the page sideways by touch even when there is nothing to show there;
+  // snap any sideways offset straight back so the receipt stays centred.
+  viewerMain.addEventListener('scroll', () => { if (viewerMain.scrollLeft) viewerMain.scrollLeft = 0; }, { passive: true });
+  window.addEventListener('scroll', () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); }, { passive: true });
+
   // ---------- offline shell ----------
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
+  $('ver').textContent = 'Receipts ' + APP_VERSION;
   refresh();
   window.__receipts = { addFiles, refresh, open, close, all };   // test hooks
 })();
